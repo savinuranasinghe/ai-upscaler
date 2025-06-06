@@ -28,8 +28,8 @@ def download_swinir_model():
     
     if not model_path.exists():
         print("📥 Downloading correct SwinIR model (first time only)...")
-        # Try the classical SR model instead
-        url = "https://github.com/JingyunLiang/SwinIR/releases/download/v0.0/001_classicalSR_DIV2K_s48w8_SwinIR-M_x4.pth"
+        # Use the real-world classical SR model
+        url = "https://github.com/JingyunLiang/SwinIR/releases/download/v0.0/003_realSR_BSRGAN_DFO_s64w8_SwinIR-M_x4_GAN.pth"
         
         try:
             response = requests.get(url, stream=True)
@@ -65,24 +65,37 @@ class SwinIRModel:
                 self.device = torch.device('cpu')
                 print("💻 Using CPU (slower but works)")
             
-            # Initialize model with EXACT parameters for classical SR model
+            # Initialize model with EXACT parameters for real-world SR model
             self.model = SwinIR(
                 upscale=4,
                 in_chans=3,
-                img_size=48,  # Changed to 48 for classical SR
+                img_size=64,  # 64 for real-world SR
                 window_size=8,
                 img_range=1.0,
                 depths=[6, 6, 6, 6, 6, 6],  # 6 layers for medium model
                 embed_dim=180,  # 180 for medium model
                 num_heads=[6, 6, 6, 6, 6, 6],  # 6 heads for medium model
                 mlp_ratio=2,
-                upsampler='pixelshuffledirect',  # Direct pixelshuffle for classical SR
+                upsampler='nearest+conv',  # This model uses nearest+conv upsampler
                 resi_connection='1conv'
             )
             
             # Load weights
             checkpoint = torch.load(model_path, map_location=self.device)
-            self.model.load_state_dict(checkpoint['params_ema'] if 'params_ema' in checkpoint else checkpoint)
+            
+            # Handle different checkpoint formats
+            if 'params' in checkpoint:
+                # This is the format your model uses
+                state_dict = checkpoint['params']
+            elif 'params_ema' in checkpoint:
+                state_dict = checkpoint['params_ema']
+            elif 'state_dict' in checkpoint:
+                state_dict = checkpoint['state_dict']
+            else:
+                # Assume the checkpoint is the state dict itself
+                state_dict = checkpoint
+            
+            self.model.load_state_dict(state_dict)
             self.model.eval()
             self.model = self.model.to(self.device)
             
