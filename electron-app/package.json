@@ -1,0 +1,19 @@
+{
+  "name": "ai-image-upscaler",
+  "version": "1.0.0",
+  "description": "AI-powered image upscaler using Real-ESRGAN",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron .",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": ["electron", "ai", "image", "upscaler"],
+  "author": "Your Name",
+  "license": "ISC",
+  "devDependencies": {
+    "electron": "^latest"
+  },
+  "dependencies": {
+    "axios": "^latest"
+  }
+}
