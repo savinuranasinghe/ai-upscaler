@@ -1,0 +1,15 @@
+# Node modules
+node_modules/
+dist/
+
+# Python
+__pycache__/
+*.pyc
+venv/
+.env
+
+# Models (we'll add these later)
+models/*.pth
+
+# OS
+.DS_Store
