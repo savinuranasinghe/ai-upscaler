@@ -48,7 +48,7 @@ class WindowAttention(nn.Module):
 
         coords_h = torch.arange(self.window_size[0])
         coords_w = torch.arange(self.window_size[1])
-        coords = torch.stack(torch.meshgrid([coords_h, coords_w]))
+        coords = torch.stack(torch.meshgrid([coords_h, coords_w], indexing='ij'))
         coords_flatten = torch.flatten(coords, 1)
         relative_coords = coords_flatten[:, :, None] - coords_flatten[:, None, :]
         relative_coords = relative_coords.permute(1, 2, 0).contiguous()
@@ -331,7 +331,9 @@ class SwinIR(nn.Module):
         self.upscale = upscale
         self.upsampler = upsampler
 
+        # First convolution
         self.conv_first = nn.Conv2d(num_in_ch, embed_dim, 3, 1, 1)
+        
         self.num_layers = len(depths)
         self.embed_dim = embed_dim
         self.ape = ape
@@ -342,6 +344,16 @@ class SwinIR(nn.Module):
         # Define patches_resolution before conditional use
         patches_resolution = [img_size // patch_size, img_size // patch_size]
         self.patches_resolution = patches_resolution
+
+        # Patch embedding with optional normalization
+        self.patch_embed = PatchEmbed(
+            img_size=img_size, patch_size=patch_size, in_chans=embed_dim, embed_dim=embed_dim,
+            norm_layer=norm_layer if self.patch_norm else None)
+        
+        # Patch un-embedding
+        self.patch_unembed = PatchUnEmbed(
+            img_size=img_size, patch_size=patch_size, in_chans=0, embed_dim=embed_dim,
+            norm_layer=None)
 
         if self.ape:
             self.absolute_pos_embed = nn.Parameter(torch.zeros(1, embed_dim, patches_resolution[0], patches_resolution[1]))
@@ -372,6 +384,9 @@ class SwinIR(nn.Module):
                          )
             self.layers.append(layer)
         self.norm = norm_layer(self.num_features)
+
+        # CRITICAL: Add the missing conv_after_body layer
+        self.conv_after_body = nn.Conv2d(embed_dim, embed_dim, 3, 1, 1)
 
         if self.upsampler == 'pixelshuffle':
             self.conv_before_upsample = nn.Sequential(nn.Conv2d(embed_dim, num_feat, 3, 1, 1),
@@ -432,20 +447,23 @@ class SwinIR(nn.Module):
 
         if self.upsampler == 'pixelshuffle':
             x = self.conv_first(x)
-            x = self.conv_before_upsample(self.forward_features(x))
+            x = self.conv_after_body(self.forward_features(x)) + x  # Use conv_after_body
+            x = self.conv_before_upsample(x)
             x = self.conv_last(self.upsample(x))
         elif self.upsampler == 'pixelshuffledirect':
             x = self.conv_first(x)
-            x = self.conv_last(self.upsample(self.forward_features(x)))
+            x = self.conv_after_body(self.forward_features(x)) + x  # Use conv_after_body
+            x = self.conv_last(self.upsample(x))
         elif self.upsampler == 'nearest+conv':
             x = self.conv_first(x)
-            x = self.conv_before_upsample(self.forward_features(x))
+            x = self.conv_after_body(self.forward_features(x)) + x  # Use conv_after_body
+            x = self.conv_before_upsample(x)
             x = self.lrelu(self.conv_up1(torch.nn.functional.interpolate(x, scale_factor=2, mode='nearest')))
             x = self.lrelu(self.conv_up2(torch.nn.functional.interpolate(x, scale_factor=2, mode='nearest')))
             x = self.conv_last(self.lrelu(self.conv_hr(x)))
         else:
             x_first = self.conv_first(x)
-            res = self.conv_last(self.forward_features(x_first))
+            res = self.conv_after_body(self.forward_features(x_first)) + x_first  # Use conv_after_body
             x = x + res
 
         x = x / self.img_range + self.mean
